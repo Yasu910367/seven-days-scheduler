@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>スケジュール・タスク帳</title>
+    <style>
+        /* ==================== 共通 CSS (七曜デザイン対応版 - タイトル/見出し調整済み) ==================== */
+        :root {
+            /* 曜日ごとにJavaScriptで上書きされるCSS変数 */
+            --main-bg-gradient: linear-gradient(135deg, #f0f4f8 0%, #d9e2ec 100%);
+            --header-bg: #343a40;
+            --main-color: #007bff; /* スケジュール・主要ボタン */
+            --text-color: #343a40;
+            --active-tab-bg: #f8f9fa;
+            --task-color: #6c757d;   /* タスクのボーダー */
+            --time-color: #f4d26c;   /* 時間管理のボーダー */
+            --contrast-color: #dc3545; /* 警告色（削除ボタン、今日の日付） */
+            --header-title-color: white; /* ヘッダータイトルの初期色 */
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: var(--main-bg-gradient); 
+            background-attachment: fixed;
+            color: var(--header-title-color);
+            transition: background 1s ease; 
+        }
+
+        header {
+            text-align: center;
+            padding: 20px 0;
+            background-color: var(--header-bg);
+            color: white;
+            margin-bottom: 20px;
+            border-radius: 12px;
+            box-shadow: 0 8px 15px rgba(0, 0, 0, 0.4);
+            animation: fadeInDown 1s ease-out;
+            transition: background-color 1s ease;
+        }
+        
+        header h1 {
+             font-size: 1.8em;
+             margin: 0;
+             letter-spacing: 2px;
+             color: var(--header-title-color); /* 曜日によって変更される */
+             transition: color 1s ease;
+        }
+
+
+        .tabs {
+            display: flex;
+            margin-bottom: 0; 
+            overflow-x: auto; 
+            white-space: nowrap;
+            border-radius: 8px 8px 0 0;
+            background-color: rgba(0, 0, 0, 0);
+            box-shadow: 0 -4px 6px rgba(0, 0, 0, 0.15);
+        }
+
+        .tab-button {
+            padding: 12px 18px; 
+            cursor: pointer;
+            border: none;
+            background-color: transparent;
+            border-bottom: 3px solid transparent;
+            transition: background-color 0.3s, border-bottom 0.3s;
+            flex-shrink: 0; 
+            color: var(--header-title-col);
+            font-weight: 500;
+        }
+
+        .tab-button:hover {
+             background-color: rgba(0, 0, 0, 0);
+        }
+
+        .tab-button.active {
+            background-color: var(--active-tab-bg);
+            border-bottom: 3px solid var(--main-color);
+            font-weight: bold;
+            color: var(--active-tab-bg);
+        }
+
+        .content-section {
+            display: none;
+            padding: 20px; 
+            background-color: var(--active-tab-bg);
+            border-radius: 0 0 12px 12px; 
+            box-shadow: 0 6px 15px rgba(0, 0, 0, 0.3);
+            border-top: 1px solid #ccc;
+        }
+
+        .content-section.active {
+            display: block;
+        }
+        
+        /* 見出し（h2）の色をメインカラーに連動 */
+        h2 { 
+            color: var(--main-color); 
+            border-bottom: 2px solid #aaa; 
+            padding-bottom: 5px; 
+            transition: color 1s ease; /* 色変化を滑らかに */
+        }
+        h3 { color: var(--text-color); }
+
+        /* フォームコンテナ */
+        .form-container {
+            padding: 15px;
+            margin-bottom: 20px;
+            border: 2px solid var(--main-color); 
+            border-radius: 10px;
+            background-color: #e9ecef; 
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+            transition: border-color 1s ease;
+        }
+        
+        input[type="date"], input[type="time"], input[type="text"], input[type="number"], button, select {
+            padding: 10px; 
+            margin-right: 10px;
+            margin-bottom: 8px; 
+            border: 1px solid #aaa;
+            border-radius: 6px; 
+            box-sizing: border-box; 
+            width: auto;
+            min-width: 0;
+            background-color: white; 
+            /* 修正済み: フォーム入力文字色を黒に固定 */
+            color: #000000; 
+        }
+
+        button {
+            background-color: var(--main-color);
+            color: white;
+            cursor: pointer;
+            border: none;
+            line-height: 1;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+        
+        button:hover {
+            background-color: color-mix(in srgb, var(--main-color) 80%, black); 
+            transform: translateY(-1px);
+        }
+
+        .delete-btn {
+            background-color: var(--contrast-color); 
+        }
+        .delete-btn:hover {
+            background-color: color-mix(in srgb, var(--contrast-color) 80%, black);
+        }
+        
+        /* リストとアイテムのスタイル */
+        .list-item {
+            display: flex;
+            flex-direction: row;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            margin-bottom: 10px;
+            border-radius: 8px;
+            background-color: #f8f9fa;           
+        /*この上のbackground-colorを00000を変えるのも候補の一つ（元々は#f8f9fa）*/
+            border-left: 6px solid var(--main-color); 
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); 
+            transition: transform 0.2s, border-left-color 1s ease;
+            flex-wrap: wrap; 
+            /* === 🚀 修正箇所: リストアイテム内の文字色を黒に固定 === */
+            color: #000000;
+            /* ======================================== */
+        }
+        
+        .list-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+        }
+        
+        .item-details {
+            flex-grow: 1;
+            margin-bottom: 5px;
+            font-size: 1.05em;
+        }
+        
+        /* タスク/時間管理のテーマカラーの適用 */
+        .list-item.task-list { border-left-color: var(--task-color); } 
+        .list-item.record-item { border-left-color: var(--time-color); } 
+        .priority-label { font-weight: bold; color: var(--contras-color); margin-right: 10px; }
+        
+        /* タイマー表示 */
+        .timer-display {
+            font-size: 3em; 
+            font-weight: 700;
+            color: var(--main-color); 
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.1);
+            margin: 20px 0;
+            transition: color 1s ease;
+        }
+        
+        .category-header {
+            background-color: #e9ecef; 
+            padding: 10px; 
+            margin-top: 15px; 
+            border-radius: 8px;
+            border: 1px solid var(--time-color);
+            transition: border-color 1s ease;
+        }
+
+        .category-header strong {
+            color: var(--main-color);
+            transition: color 1s ease;
+        }
+        
+        /* カレンダーデザインの調整 */
+        .calendar-grid { 
+            border: 2px solid var(--main-color); 
+            transition: border-color 1s ease;
+        }
+        .day-header { 
+            background-color: var(--main-color); 
+            color: white;
+            transition: background-color 1s ease;
+        }
+        .day-cell.current-month {
+            background-color: color-mix(in srgb, var(--main-color) 5%, white); 
+            transition: background-color 1s ease;
+        }
+        .day-event { 
+            background-color: color-mix(in srgb, var(--main-color) 80%, black);
+            color: white; 
+            transition: background-color 1s ease;
+        }
+        .day-cell strong {
+             color: var(--main-color);
+             transition: color 1s ease;
+        }
+        .day-cell strong[style*="dc3545"] {
+             color: var(--contrast-color) !important;
+        }
+
+        /* 以下、レスポンシブデザインと詳細リストスタイルは前回のコードを維持 */
+        @media screen and (max-width: 600px) {
+            body { padding: 10px; }
+            .form-container input[type="date"], .form-container button { width: 100%; margin-right: 0; margin-bottom: 10px; }
+            .task-list .list-item > div:last-child { display: flex; flex-wrap: nowrap; width: 100%; margin-top: 5px; justify-content: flex-end; }
+            .task-list .list-item input[type="number"] { width: 80px !important; margin-right: 5px; }
+            .task-list .list-item button { width: auto; min-width: 60px; margin-right: 5px; padding: 8px; }
+            .task-list .list-item button:last-child { margin-right: 0; }
+            .view-controls button { padding: 8px 10px; font-size: 0.8em; margin-bottom: 5px; }
+            .timer-controls { display: flex; flex-direction: column; gap: 10px; }
+            .timer-controls select, .timer-controls button { width: 100%; margin: 0 !important; }
+            .list-item .item-details { margin-bottom: 5px; width: 100%; order: 1; }
+            .list-item > button { width: auto; min-width: 60px; margin-top: 0; order: 2; margin-left: auto; line-height: 1; }
+            .record-item button { order: 3; margin-left: 5px; }
+            .category-header .delete-btn { width: auto; min-width: 60px; margin-top: 0; margin-left: 10px; }
+            .day-cell { min-height: 60px; font-size: 0.7em; }
+        }
+        
+        .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; border-radius: 8px; overflow: hidden; }
+        .day-header { text-align: center; padding: 8px 5px; font-weight: bold; font-size: 0.9em; }
+        .day-cell { min-height: 90px; padding: 5px; background-color: #fff; border: 1px solid #eee; overflow-y: auto; font-size: 0.8em; }
+        .day-event { padding: 3px 6px; margin-bottom: 3px; border-radius: 4px; cursor: pointer; line-height: 1.3; font-size: 0.9em;}
+        .record-item.nested { margin-left: 15px; background-color: #fefefe; }
+        .category-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+        @keyframes fadeInDown { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1 id="header-title">七曜デザイン スケジュール＆タスク帳</h1>
+    </header>
+
+    <div class="tabs">
+        <button class="tab-button active" onclick="openTab('schedule')">📅 スケジュール</button>
+        <button class="tab-button" onclick="openTab('task')">📋 タスク</button>
+        <button class="tab-button" onclick="openTab('time-management')">🕰️ 時間管理</button>
+    </div>
+
+    <div id="schedule" class="content-section active">
+        <h2>📅 予定の書き込みと管理</h2>
+
+        <div class="form-container">
+            <h3 style="color: main">予定の追加はここから↓</h3>
+            <input type="date" id="schedule-date" required>
+            <input type="time" id="schedule-time">
+            <input type="text" id="schedule-event" placeholder="予定内容（例: 講義、課題提出）" required>
+            <button onclick="addSchedule()">追加</button>
+        </div>
+        <h3 id="current-date-display" style="color:main">月間</h3>
+
+        <div class="view-controls">
+            <button id="view-prev" onclick="navigateCalendar(-1)">&lt; 前へ</button>
+            <button id="view-today" onclick="navigateToToday()">今日</button>
+            <button id="view-next" onclick="navigateCalendar(1)">次へ &gt;</button>
+            |
+            <button id="view-month-btn" class="active" onclick="changeView('month')">月</button>
+            <button id="view-week-btn" onclick="changeView('week')">週</button>
+            <button id="view-day-btn" onclick="changeView('day')">日</button>
+        </div>
+        
+        <div id="calendar-container">
+            <div id="month-view" class="active-view"></div>
+            <div id="week-view" style="display: none;"></div>
+            <div id="day-view" style="display: none;"></div>
+        </div>
+
+        <h4 style="margin-top:30px; color:white;">すべての予定リスト</h4>
+        <ul id="all-schedule-list" class="list-container"></ul>
+    </div>
+
+    <div id="task" class="content-section">
+        <h2>📋 タスクの優先順位付けと管理</h2>
+
+        <div class="form-container">
+            <h3>タスクの追加</h3>
+            <input type="text" id="task-description" placeholder="タスク内容" required>
+            <input type="number" id="task-priority" placeholder="優先度 (1が最高)" min="1">
+            <button onclick="addTask()">追加</button>
+        </div>
+
+        <h3>優先度順タスクリスト</h3>
+        <ul id="task-list" class="list-container"></ul>
+    </div>
+    
+    <div id="time-management" class="content-section">
+        <h2>🕰️ 勉強時間計測・記録</h2>
+        
+        <div class="form-container">
+            <h3>計測種類の追加</h3>
+            <input type="text" id="timer-category-input" placeholder="例: 信号処理、プログラミング課題" required>
+            <button onclick="addTimerCategory()">種類を追加</button>
+        </div>
+        
+        <div class="timer-controls">
+            <select id="timer-category-select">
+                <option value="">種類を選択</option>
+            </select>
+            <button id="timer-start-btn" onclick="startTimer()">▶️ 開始</button>
+            <button id="timer-stop-btn" onclick="stopTimer()" disabled>⏹️ 終了</button>
+        </div>
+
+        <div class="timer-display" id="timer-display" >
+            00:00:00
+        </div>
+        
+        <h3 style="margin-top: 30px;">全記録リスト (種類ごとに分類)</h3>
+        <ul id="timer-record-list" class="list-container"></ul>
+        
+        <h3 style="margin-top: 30px;">登録済み計測種類</h3>
+        <ul id="timer-category-list" class="list-container">
+            </ul>
+    </div>
+
+    <script>
+        // ==================== JavaScript (テーマ機能の調整) ====================
+        
+        // ローカルストレージのキー
+        const SCHEDULE_KEY = 'mySchedules';
+        const TASK_KEY = 'myTasks';
+        const TIMER_RECORDS_KEY = 'myTimerRecords';
+        const TIMER_CATEGORIES_KEY = 'myTimerCategories';
+        
+        // 状態管理
+        let currentView = 'month';
+        let displayDate = new Date(); 
+        let timerInterval = null;
+        let startTime = 0;
+        let running = false;
+
+        // ------------------ 曜日別テーマ定義 ------------------
+        // [0:日, 1:月, 2:火, 3:水, 4:木, 5:金, 6:土]
+        const dailyThemes = [
+            { // 0: 日曜日 (日/Sun) ☀️
+                name: '', symbol: '☀️',
+                gradient: 'linear-gradient(135deg, #FFD700 0%, #FFA500 60%, #FF8C00 100%)',
+                header: '#f4d26', main: '#FFD700', text: '#333', contrast: '#dc3545', task: '#FF4500', time: '#FFD700',
+            },
+            { // 1: 月曜日 (月/Moon) 🌙
+                name: '', symbol: '🌙',
+                gradient: 'linear-gradient(135deg, #708090 0%, #B0C4DE 60%, #E6E6FA 100%)',
+                header: '#36454F', main: '#708090', text: '#333', contrast: '#dc3545', task: '#B0C4DE', time: '#FFD700',
+            },
+            { // 5: 金曜日 (金/Gold) ✨
+                name: '', symbol: '✨',
+                gradient: 'linear-gradient(135deg, #DAA520 0%, #FFEC8B 60%, #F0E68C 100%)',
+                header: '#B8860B', main: '#FFD700', text: '#333', contrast: '#dc3545', task: '#BDB76B', time: '#DAA520',
+            },
+            { // 2: 火曜日 (火/Fire) 🔥
+                name: '', symbol: '🔥',
+                gradient: 'linear-gradient(135deg, #8B0000 0%, #FF4500 60%, #FFD700 100%)',
+                header: '#8B0000', main: '#FF4500', text: '#eee', contrast: '#FFD700', task: '#FF8C00', time: '#8B0000',
+            },
+            { // 3: 水曜日 (水/Water) 💧
+                name: '', symbol: '💧',
+                gradient: 'linear-gradient(135deg, #0056b3 0%, #007bff 60%, #87CEEB 100%)',
+                header: '#00447C', main: '#007bff', text: '#333', contrast: '#dc3545', task: '#17a2b8', time: '#20c997',
+            },
+            { // 4: 木曜日 (木/Forest) 🌳
+                name: '', symbol: '🌳',
+                gradient: 'linear-gradient(135deg, #2c5234 0%, #4B8E4F 60%, #a2d2a6 100%)',
+                header: '#4B3726', main: '#28a745', text: '#343a40', contrast: '#dc3545', task: '#6c757d', time: '#ffc107',
+            },
+            { // 5: 金曜日 (金/Gold) ✨
+                name: '', symbol: '✨',
+                gradient: 'linear-gradient(135deg, #DAA520 0%, #FFEC8B 60%, #F0E68C 100%)',
+                header: '#B8860B', main: '#FFD700', text: '#333', contrast: '#dc3545', task: '#BDB76B', time: '#DAA520',
+            },
+            { // 6: 土曜日 (土/Earth) ⛰️
+                name: '', symbol: '⛰️',
+                gradient: 'linear-gradient(135deg, #A0522D 0%, #D2B48C 60%, #FFEBCD 100%)',
+                header: '#8B4513', main: '#A0522D', text: '#333', contrast: '#dc3545', task: '#696969', time: '#D2B48C',
+            }
+        ];
+
+        function applyDailyTheme() {
+            const today = new Date().getDay(); // 0 (日曜日) から 6 (土曜日)
+            const theme = dailyThemes[today];
+            const root = document.documentElement;
+
+            // CSS変数の設定
+            root.style.setProperty('--main-bg-gradient', theme.gradient);
+            root.style.setProperty('--header-bg', theme.header);
+            root.style.setProperty('--main-color', theme.main);
+            root.style.setProperty('--text-color', theme.text);
+            root.style.setProperty('--contrast-color', theme.contrast);
+            root.style.setProperty('--task-color', theme.task);
+            root.style.setProperty('--time-color', theme.time);
+            
+            // ヘッダータイトルと全体タイトルの設定
+            document.getElementById('header-title').textContent = `${theme.symbol} ${theme.name} スケジュール＆タスク帳`;
+            
+            // **H1の色の動的調整** (火曜など背景が濃いテーマでの視認性確保)
+            if (today === 2) { // 火曜日 (Fire) の場合、背景が赤黒いためH1は明るい色に
+                 root.style.setProperty('--header-title-color', '#FFD700'); // ゴールド
+            } else if (today === 0 || today === 5) { // 日曜日(Sun), 金曜日(Gold)など、背景が明るい場合
+                 root.style.setProperty('--header-title-color', theme.header); // ヘッダー背景と同じ濃い色
+            }
+            else { // その他の曜日は白
+                 root.style.setProperty('--header-title-color', 'white');
+            }
+            
+            document.body.style.color = theme.text;
+            
+            // 火曜日テーマ (火/Fire) のみ、コンテンツ背景を暗く調整 (CSS変数で対応)
+            if (today === 2) {
+                root.style.setProperty('--active-tab-bg', 'rgba(0,0,0,0.9)');
+                document.querySelectorAll('.content-section').forEach(section => {
+                     section.style.backgroundColor = 'rgba(0,0,0,0.9)';
+                });
+                document.querySelectorAll('.tab-button').forEach(btn => {
+                     btn.style.color = '#eee';
+                });
+            } else {
+                 root.style.setProperty('--active-tab-bg', '#f8f9fa');
+                 document.querySelectorAll('.content-section').forEach(section => {
+                     section.style.backgroundColor = 'var(--active-tab-bg)';
+                });
+            }
+        }
+        
+        // ------------------ 初期設定 (テーマ適用を追加) ------------------
+
+        document.addEventListener('DOMContentLoaded', () => {
+            applyDailyTheme(); // 最初にテーマを適用
+            document.getElementById('schedule-date').value = new Date().toISOString().substring(0, 10);
+            
+            loadAndDisplaySchedules();
+            loadAndDisplayTasks();
+            loadTimerCategories();
+            loadAndDisplayTimerRecords();
+            
+            openTab('schedule');
+            changeView('month');
+            navigateToToday();
+        });
+
+        // ------------------ ユーティリティ/タブ切り替え (変更なし) ------------------
+        
+        function formatDate(date) {
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
+        
+        function getWeekStart(date) {
+            const d = new Date(date);
+            const dayOfWeek = d.getDay(); 
+            const diff = d.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); 
+            return new Date(d.setDate(diff));
+        }
+
+        function formatTime(seconds) {
+            const h = String(Math.floor(seconds / 3600)).padStart(2, '0');
+            const m = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
+            const s = String(seconds % 60).padStart(2, '0');
+            return `${h}:${m}:${s}`;
+        }
+
+        function openTab(tabId) {
+            document.querySelectorAll('.content-section').forEach(section => {
+                section.classList.remove('active');
+            });
+            document.querySelectorAll('.tab-button').forEach(button => {
+                button.classList.remove('active');
+            });
+
+            document.getElementById(tabId).classList.add('active');
+            document.querySelector(`.tab-button[onclick="openTab('${tabId}')"]`).classList.add('active');
+            
+            if (tabId === 'time-management') {
+                loadTimerCategories();
+                loadAndDisplayTimerRecords();
+            }
+        }
+        
+        // ------------------ スケジュール管理 (ロジック変更なし) ------------------
+
+        function saveSchedules(schedules) { localStorage.setItem(SCHEDULE_KEY, JSON.stringify(schedules)); }
+        function getSchedules() { return localStorage.getItem(SCHEDULE_KEY) ? JSON.parse(localStorage.getItem(SCHEDULE_KEY)) : []; }
+        function addSchedule() { 
+            const date = document.getElementById('schedule-date').value;
+            const time = document.getElementById('schedule-time').value;
+            const event = document.getElementById('schedule-event').value.trim();
+            if (!date || !event) { alert('日付と予定内容は必須です。'); return; }
+            const schedules = getSchedules();
+            schedules.push({ id: Date.now(), date: date, time: time, event: event });
+            saveSchedules(schedules);
+            document.getElementById('schedule-time').value = '';
+            document.getElementById('schedule-event').value = '';
+            loadAndDisplaySchedules(); 
+        }
+
+        function deleteSchedule(id) { 
+            let schedules = getSchedules();
+            schedules = schedules.filter(s => s.id !== id);
+            saveSchedules(schedules);
+            loadAndDisplaySchedules();
+        }
+        
+        function getSortedSchedules() {
+            const schedules = getSchedules();
+            return schedules.sort((a, b) => {
+                const dateTimeA = `${a.date} ${a.time || '23:59'}`;
+                const dateTimeB = `${b.date} ${b.time || '23:59'}`;
+                return dateTimeA.localeCompare(dateTimeB);
+            });
+        }
+        
+        function loadAndDisplaySchedules() { 
+            const sortedSchedules = getSortedSchedules();
+            const allScheduleList = document.getElementById('all-schedule-list');
+            allScheduleList.innerHTML = '';
+            if (sortedSchedules.length === 0) {
+                allScheduleList.innerHTML = '<li>登録済みの予定はありません。</li>';
+            } else {
+                sortedSchedules.forEach(schedule => {
+                    allScheduleList.appendChild(createScheduleListItem(schedule));
+                });
+            }
+            renderCalendarView(currentView, displayDate); 
+        }
+
+        function createScheduleListItem(schedule) {
+            const li = document.createElement('li');
+            li.className = 'list-item';
+            const timeDisplay = schedule.time ? ` (${schedule.time})` : '';
+            li.innerHTML = `
+                <div class="item-details">
+                    <strong>${schedule.date}</strong>${timeDisplay}: ${schedule.event}
+                </div>
+                <button class="delete-btn" onclick="deleteSchedule(${schedule.id})">完了</button>
+            `;
+            return li;
+        }
+
+        function changeView(view) {
+            currentView = view;
+            document.querySelectorAll('.view-controls button').forEach(btn => {
+                if (btn.id.includes(view)) {
+                    btn.classList.add('active');
+                } else if (btn.id.endsWith('-btn')) {
+                    btn.classList.remove('active');
+                }
+            });
+            document.querySelectorAll('#calendar-container > div').forEach(container => { container.style.display = 'none'; });
+            document.getElementById(`${view}-view`).style.display = 'block';
+            renderCalendarView(currentView, displayDate);
+        }
+        
+        function navigateToToday() { displayDate = new Date(); renderCalendarView(currentView, displayDate); }
+        
+        function navigateCalendar(step) {
+            if (currentView === 'month') { displayDate.setMonth(displayDate.getMonth() + step); } 
+            else if (currentView === 'week') { displayDate.setDate(displayDate.getDate() + (step * 7)); } 
+            else if (currentView === 'day') { displayDate.setDate(displayDate.getDate() + step); }
+            renderCalendarView(currentView, displayDate);
+        }
+        
+        function renderCalendarView(view, date) {
+            const schedules = getSchedules();
+            const schedulesByDate = schedules.reduce((acc, sched) => {
+                acc[sched.date] = acc[sched.date] || [];
+                acc[sched.date].push(sched);
+                return acc;
+            }, {});
+            if (view === 'month') { renderMonthView(date, schedulesByDate); } 
+            else if (view === 'week') { renderWeekView(date, schedulesByDate); } 
+            else if (view === 'day') { renderDayView(date, schedulesByDate); }
+        }
+        
+        function renderMonthView(date, schedulesByDate) {
+            const container = document.getElementById('month-view');
+            container.innerHTML = ''; 
+            const month = date.getMonth();
+            const year = date.getFullYear();
+            document.getElementById('current-date-display').textContent = `${year}年 ${month + 1}月 (月間ビュー)`;
+            const firstDayOfMonth = new Date(year, month, 1);
+            const startDay = getWeekStart(firstDayOfMonth);
+            const daysOfWeek = ['月', '火', '水', '木', '金', '土', '日'];
+            let html = '<div class="calendar-grid">';
+            daysOfWeek.forEach(day => { html += `<div class="day-header">${day}</div>`; });
+            let currentDate = new Date(startDay);
+            for (let i = 0; i < 42; i++) {
+                const dateStr = formatDate(currentDate);
+                const isCurrentMonth = currentDate.getMonth() === month;
+                const isToday = dateStr === formatDate(new Date());
+                let cellClass = 'day-cell';
+                if (isCurrentMonth) cellClass += ' current-month';
+                html += `<div class="${cellClass}">`;
+                html += `<strong style="color: ${isToday ? 'var(--contrast-color)' : isCurrentMonth ? 'var(--main-color)' : '#aaa'};">${currentDate.getDate()}</strong>`;
+                if (schedulesByDate[dateStr]) {
+                    schedulesByDate[dateStr].forEach(sched => {
+                        html += `<div class="day-event" title="${sched.time ? sched.time + ' ' : ''}${sched.event}">${sched.time ? sched.time + ' ' : ''}${sched.event}</div>`;
+                    });
+                }
+                html += '</div>';
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        function renderWeekView(date, schedulesByDate) {
+            const container = document.getElementById('week-view');
+            container.innerHTML = '';
+            const weekStart = getWeekStart(date);
+            const weekEnd = new Date(weekStart);
+            weekEnd.setDate(weekEnd.getDate() + 6);
+            const startStr = weekStart.toLocaleDateString('ja-JP', { month: '2-digit', day: '2-digit' });
+            const endStr = weekEnd.toLocaleDateString('ja-JP', { month: '2-digit', day: '2-digit' });
+            document.getElementById('current-date-display').textContent = `${weekStart.getFullYear()}年 ${startStr} - ${endStr} (週間ビュー)`;
+            let html = '<div class="calendar-grid">';
+            const daysOfWeek = ['月', '火', '水', '木', '金', '土', '日'];
+            let currentDate = new Date(weekStart);
+            daysOfWeek.forEach(day => {
+                html += `<div class="day-header">${day} (${currentDate.getMonth()+1}/${currentDate.getDate()})</div>`;
+                currentDate.setDate(currentDate.getDate() + 1);
+            });
+            currentDate = new Date(weekStart);
+            for (let i = 0; i < 7; i++) {
+                const dateStr = formatDate(currentDate);
+                let cellClass = 'day-cell';
+                if (dateStr === formatDate(new Date())) cellClass += ' current-month';
+                html += `<div class="${cellClass}" style="min-height: 250px;">`;
+                if (schedulesByDate[dateStr]) {
+                    schedulesByDate[dateStr].sort((a, b) => (a.time || '23:59').localeCompare(b.time || '23:59')).forEach(sched => {
+                        html += `<div class="day-event" title="${sched.event}">
+                                    ${sched.time || '[終日]'} ${sched.event}
+                                </div>`;
+                    });
+                }
+                html += '</div>';
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        function renderDayView(date, schedulesByDate) {
+            const container = document.getElementById('day-view');
+            container.innerHTML = '';
+            const dateStr = formatDate(date);
+            document.getElementById('current-date-display').textContent = `${dateStr} (日ビュー)`;
+            let html = `<div style="border: 1px solid #ccc; padding: 15px; border-radius: 8px;"><h3>${dateStr}の予定</h3>`;
+            if (schedulesByDate[dateStr]) {
+                schedulesByDate[dateStr].sort((a, b) => (a.time || '23:59').localeCompare(b.time || '23:59')).forEach(sched => {
+                    html += `<div class="list-item" style="border-left: 6px solid var(--main-color);">
+                                <div class="item-details">
+                                    <strong>${sched.time || '[終日]'}</strong>: ${sched.event}
+                                </div>
+                                <button class="delete-btn" onclick="deleteSchedule(${sched.id})">消去</button>
+                            </div>`;
+                });
+            } else {
+                html += '<p>この日の予定はありません。</p>';
+            }
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        // ------------------ タスク管理 (ロジック変更なし) ------------------
+
+        function saveTasks(tasks) { localStorage.setItem(TASK_KEY, JSON.stringify(tasks)); }
+        function getTasks() { return localStorage.getItem(TASK_KEY) ? JSON.parse(localStorage.getItem(TASK_KEY)) : []; }
+        function addTask() { 
+            const description = document.getElementById('task-description').value.trim();
+            let priority = parseInt(document.getElementById('task-priority').value);
+            if (!description) { alert('タスク内容は必須です。'); return; }
+            let tasks = getTasks();
+            if (isNaN(priority) || priority < 1) {
+                const maxPriority = tasks.length > 0 ? Math.max(...tasks.map(t => t.priority)) : 0;
+                priority = maxPriority + 1;
+            }
+            tasks.push({ id: Date.now(), description: description, priority: priority });
+            saveTasks(tasks);
+            document.getElementById('task-description').value = '';
+            document.getElementById('task-priority').value = '';
+            loadAndDisplayTasks();
+        }
+
+        function deleteTask(id) { 
+            let tasks = getTasks();
+            tasks = tasks.filter(t => t.id !== id);
+            saveTasks(tasks);
+            loadAndDisplayTasks();
+        }
+        
+        function updateTaskPriority(id, newPriority) { 
+            let tasks = getTasks();
+            const task = tasks.find(t => t.id === id);
+            if (task && newPriority >= 1) {
+                task.priority = newPriority;
+                saveTasks(tasks);
+                loadAndDisplayTasks();
+            } else {
+                alert('有効な優先度（1以上の数値）を入力してください。');
+            }
+        }
+
+        function loadAndDisplayTasks() { 
+            const tasks = getTasks();
+            const taskList = document.getElementById('task-list');
+            taskList.innerHTML = '';
+            const sortedTasks = tasks.sort((a, b) => a.priority - b.priority);
+            if (sortedTasks.length === 0) {
+                taskList.innerHTML = '<li>タスクは登録されていません。</li>';
+                return;
+            }
+            sortedTasks.forEach(task => {
+                const li = document.createElement('li');
+                li.className = 'list-item task-list'; 
+                li.innerHTML = `
+                    <div class="item-details">
+                        <span class="priority-label">優先度: ${task.priority}</span>
+                        ${task.description}
+                    </div>
+                    
+                    <div>
+                        <input type="number" id="priority-input-${task.id}" value="${task.priority}" min="1" style="width: 80px;">
+                        <button onclick="updateTaskPriority(${task.id}, parseInt(document.getElementById('priority-input-${task.id}').value))" 
+                                style="background-color: var(--task-color);">変更</button>
+                        
+                        <button class="delete-btn" onclick="deleteTask(${task.id})">削除</button>
+                    </div>
+                `;
+                taskList.appendChild(li);
+            });
+        }
+        
+        // ------------------ 時間管理 (ロジック変更なし) ------------------
+
+        function getTimerRecords() { return localStorage.getItem(TIMER_RECORDS_KEY) ? JSON.parse(localStorage.getItem(TIMER_RECORDS_KEY)) : []; }
+        function saveTimerRecords(records) { localStorage.setItem(TIMER_RECORDS_KEY, JSON.stringify(records)); }
+        function getTimerCategories() { return localStorage.getItem(TIMER_CATEGORIES_KEY) ? JSON.parse(localStorage.getItem(TIMER_CATEGORIES_KEY)) : ['自習', '講義復習', '課題']; }
+        function saveTimerCategories(categories) { localStorage.setItem(TIMER_CATEGORIES_KEY, JSON.stringify(categories)); }
+        
+        function addTimerCategory() { 
+            const newCategory = document.getElementById('timer-category-input').value.trim();
+            if (!newCategory) { alert('種類を入力してください。'); return; }
+            let categories = getTimerCategories();
+            if (!categories.includes(newCategory)) {
+                categories.push(newCategory);
+                saveTimerCategories(categories);
+                loadTimerCategories(); 
+                document.getElementById('timer-category-input').value = '';
+            } else {
+                alert('その種類はすでに登録されています。');
+            }
+        }
+        
+        function loadTimerCategories() {
+            const categories = getTimerCategories();
+            const select = document.getElementById('timer-category-select');
+            select.innerHTML = '<option value="">種類を選択</option>'; 
+            categories.forEach(category => {
+                const option = document.createElement('option');
+                option.value = category;
+                option.textContent = category;
+                select.appendChild(option);
+            });
+            const categoryList = document.getElementById('timer-category-list');
+            categoryList.innerHTML = '';
+            categories.forEach(category => {
+                const li = document.createElement('li');
+                li.className = 'list-item';
+                li.style.borderLeft = '6px solid var(--time-color)';
+                li.innerHTML = `
+                    <div class="item-details">
+                        <strong>${category}</strong>
+                    </div>
+                    <button class="delete-btn" onclick="deleteTimerCategory('${category}')">削除</button>
+                `;
+                categoryList.appendChild(li);
+            });
+        }
+
+        function deleteTimerCategory(categoryName) {
+            if (!confirm(`種類「${categoryName}」を削除しますか？\n（この種類に紐づく計測記録はそのまま残ります）`)) { return; }
+            let categories = getTimerCategories();
+            categories = categories.filter(c => c !== categoryName);
+            saveTimerCategories(categories);
+            loadTimerCategories(); 
+        }
+
+        function startTimer() { 
+            const category = document.getElementById('timer-category-select').value;
+            if (!category) { alert('計測する種類を選択してください。'); return; }
+            if (running) return;
+            startTime = Date.now();
+            running = true;
+            document.getElementById('timer-start-btn').disabled = true;
+            document.getElementById('timer-stop-btn').disabled = false;
+            document.getElementById('timer-category-select').disabled = true;
+            timerInterval = setInterval(updateTimerDisplay, 1000);
+        }
+
+        function updateTimerDisplay() {
+            const elapsedTime = Math.floor((Date.now() - startTime) / 1000);
+            document.getElementById('timer-display').textContent = formatTime(elapsedTime);
+        }
+
+        function stopTimer() { 
+            if (!running) return;
+            clearInterval(timerInterval);
+            running = false;
+            const elapsedTimeSeconds = Math.floor((Date.now() - startTime) / 1000);
+            const category = document.getElementById('timer-category-select').value;
+            if (elapsedTimeSeconds > 0) {
+                const newRecord = { id: Date.now(), date: formatDate(new Date()), category: category, durationSeconds: elapsedTimeSeconds };
+                let records = getTimerRecords();
+                records.push(newRecord);
+                saveTimerRecords(records);
+            }
+            document.getElementById('timer-display').textContent = '00:00:00';
+            document.getElementById('timer-start-btn').disabled = false;
+            document.getElementById('timer-stop-btn').disabled = true;
+            document.getElementById('timer-category-select').disabled = false;
+            document.getElementById('timer-category-select').value = ''; 
+            loadAndDisplayTimerRecords();
+        }
+        
+        function loadAndDisplayTimerRecords() {
+            const records = getTimerRecords();
+            const recordList = document.getElementById('timer-record-list');
+            recordList.innerHTML = '';
+            if (records.length === 0) { recordList.innerHTML = '<li>計測記録はありません。</li>'; return; }
+            const recordsByCategory = records.reduce((acc, record) => {
+                acc[record.category] = acc[record.category] || [];
+                acc[record.category].push(record);
+                return acc;
+            }, {});
+            const totalSeconds = records.reduce((sum, record) => sum + record.durationSeconds, 0);
+            const totalTimeDisplay = formatTime(totalSeconds);
+            const overallTotal = document.createElement('h4');
+            overallTotal.innerHTML = `**全体の合計勉強時間:** <strong style="color: var(--main-color);">${totalTimeDisplay}</strong>`;
+            recordList.appendChild(overallTotal);
+            Object.keys(recordsByCategory).sort().forEach(category => {
+                const categoryRecords = recordsByCategory[category];
+                const categoryTotalSeconds = categoryRecords.reduce((sum, record) => sum + record.durationSeconds, 0);
+                const categoryTotalTimeDisplay = formatTime(categoryTotalSeconds);
+                const categoryHeader = document.createElement('div');
+                categoryHeader.className = 'category-header';
+                categoryHeader.innerHTML = `
+                    <strong style="font-size: 1.1em; color: var(--main-color);">🕰️ ${category}</strong>
+                    <span>合計: ${categoryTotalTimeDisplay}</span>
+                `;
+                recordList.appendChild(categoryHeader);
+                categoryRecords.sort((a, b) => b.id - a.id).forEach(record => {
+                    const li = createTimerRecordListItem(record);
+                    li.classList.add('nested'); 
+                    recordList.appendChild(li);
+                });
+            });
+        }
+        
+        function createTimerRecordListItem(record) {
+            const li = document.createElement('li');
+            li.className = 'list-item record-item';
+            const timeDisplay = formatTime(record.durationSeconds);
+            li.innerHTML = `
+                <div class="item-details">
+                    <span style="font-size: 0.9em; color: #666;">${record.date}</span>: 
+                    <strong>${timeDisplay}</strong>
+                </div>
+                <button class="delete-btn" onclick="deleteSingleTimerRecord(${record.id})" style="padding: 5px 10px;">記録削除</button>
+            `;
+            return li;
+        }
+
+        function deleteSingleTimerRecord(id) {
+            if (!confirm("この計測記録を削除しますか？")) return;
+            let records = getTimerRecords();
+            records = records.filter(r => r.id !== id);
+            saveTimerRecords(records);
+            loadAndDisplayTimerRecords();
+        }
+        
+    </script>
+</body>
+</html>

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>七曜デザイン スケジュール＆タスク帳</title>
+    
+    <link rel="stylesheet" href="css/style.css">
+    
+    <script type="module" src="js/main.js"></script>
+</head>
+<body>
+
+    <header>
+        <h1 id="header-title">七曜デザイン スケジュール＆タスク帳</h1>
+    </header>
+
+    <div class="tabs">
+        <button class="tab-button active" onclick="openTab('schedule')">📅 スケジュール</button>
+        <button class="tab-button" onclick="openTab('task')">📋 タスク</button>
+        <button class="tab-button" onclick="openTab('time-management')">🕰️ 時間管理</button>
+    </div>
+
+    <div id="schedule" class="content-section active">
+        <h2>📅 予定の書き込みと管理</h2>
+
+        <div class="form-container">
+            <h3 style="color: main">予定の追加はここから↓</h3>
+            <input type="date" id="schedule-date" required>
+            <input type="time" id="schedule-time">
+            <input type="text" id="schedule-event" placeholder="予定内容（例: 講義、課題提出）" required>
+            <button onclick="addSchedule()">追加</button>
+        </div>
+        <h3 id="current-date-display" style="color:main">月間</h3>
+
+        <div class="view-controls">
+            <button id="view-prev" onclick="navigateCalendar(-1)">&lt; 前へ</button>
+            <button id="view-today" onclick="navigateToToday()">今日</button>
+            <button id="view-next" onclick="navigateCalendar(1)">次へ &gt;</button>
+            |
+            <button id="view-month-btn" class="active" onclick="changeView('month')">月</button>
+            <button id="view-week-btn" onclick="changeView('week')">週</button>
+            <button id="view-day-btn" onclick="changeView('day')">日</button>
+        </div>
+        
+        <div id="calendar-container">
+            <div id="month-view" class="active-view"></div>
+            <div id="week-view" style="display: none;"></div>
+            <div id="day-view" style="display: none;"></div>
+        </div>
+
+        <h4 style="margin-top:30px; color:white;">すべての予定リスト</h4>
+        <ul id="all-schedule-list" class="list-container"></ul>
+    </div>
+
+    <div id="task" class="content-section">
+        <h2>📋 タスクの優先順位付けと管理</h2>
+
+        <div class="form-container">
+            <h3>タスクの追加</h3>
+            <input type="text" id="task-description" placeholder="タスク内容" required>
+            <input type="number" id="task-priority" placeholder="優先度 (1が最高)" min="1">
+            <button onclick="addTask()">追加</button>
+        </div>
+
+        <h3>優先度順タスクリスト</h3>
+        <ul id="task-list" class="list-container"></ul>
+    </div>
+    
+    <div id="time-management" class="content-section">
+        <h2>🕰️ 勉強時間計測・記録</h2>
+        
+        <div class="form-container">
+            <h3>計測種類の追加</h3>
+            <input type="text" id="timer-category-input" placeholder="例: 信号処理、プログラミング課題" required>
+            <button onclick="addTimerCategory()">種類を追加</button>
+        </div>
+        
+        <div class="timer-controls">
+            <select id="timer-category-select">
+                <option value="">種類を選択</option>
+            </select>
+            <button id="timer-start-btn" onclick="startTimer()">▶️ 開始</button>
+            <button id="timer-stop-btn" onclick="stopTimer()" disabled>⏹️ 終了</button>
+        </div>
+
+        <div class="timer-display" id="timer-display" >
+            00:00:00
+        </div>
+        
+        <h3 style="margin-top: 30px;">全記録リスト (種類ごとに分類)</h3>
+        <ul id="timer-record-list" class="list-container"></ul>
+        
+        <h3 style="margin-top: 30px;">登録済み計測種類</h3>
+        <ul id="timer-category-list" class="list-container"></ul>
+    </div>
+
+</body>
+</html>

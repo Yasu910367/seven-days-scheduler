@@ -420,55 +420,106 @@ async function loadAndDisplayTasks() {
 // ==================== 時間管理 ====================
 function getTimerRecords() { return localStorage.getItem(TIMER_RECORDS_KEY) ? JSON.parse(localStorage.getItem(TIMER_RECORDS_KEY)) : []; }
 function saveTimerRecords(records) { localStorage.setItem(TIMER_RECORDS_KEY, JSON.stringify(records)); }
-function getTimerCategories() { return localStorage.getItem(TIMER_CATEGORIES_KEY) ? JSON.parse(localStorage.getItem(TIMER_CATEGORIES_KEY)) : ['自習', '講義復習', '課題']; }
-function saveTimerCategories(categories) { localStorage.setItem(TIMER_CATEGORIES_KEY, JSON.stringify(categories)); }
-
-function addTimerCategory() { 
-    const newCategory = document.getElementById('timer-category-input').value.trim();
-    if (!newCategory) { alert('種類を入力してください。'); return; }
-    let categories = getTimerCategories();
-    if (!categories.includes(newCategory)) {
-        categories.push(newCategory);
-        saveTimerCategories(categories);
-        loadTimerCategories(); 
-        document.getElementById('timer-category-input').value = '';
-    } else {
-        alert('その種類はすでに登録されています。');
+async function getTimerCategories() {
+    if (!auth.currentUser) {
+        return [];
     }
+
+    const categoriesRef = collection(db, "users", auth.currentUser.uid, "timerCategories");
+    const q = query(categoriesRef, orderBy("name", "asc"));
+    const snapshot = await getDocs(q);
+
+    return snapshot.docs.map(docSnap => ({
+        id: docSnap.id,
+        ...docSnap.data()
+    }));
 }
 
-function loadTimerCategories() {
-    const categories = getTimerCategories();
+async function addTimerCategory() {
+    console.log("addTimerCategory start");
+    console.log(auth.currentUser);
+
+    if (!auth.currentUser) {
+        alert("計測種類を保存するにはGoogleログインしてください。");
+        return;
+    }
+
+    const newCategory = document.getElementById('timer-category-input').value.trim();
+
+    if (!newCategory) {
+        alert('種類を入力してください。');
+        return;
+    }
+
+    const categories = await getTimerCategories();
+
+    if (categories.some(category => category.name === newCategory)) {
+        alert('その種類はすでに登録されています。');
+        return;
+    }
+
+    await addDoc(collection(db, "users", auth.currentUser.uid, "timerCategories"), {
+        name: newCategory,
+        createdAt: Date.now()
+    });
+
+    document.getElementById('timer-category-input').value = '';
+
+    await loadTimerCategories(); 
+}
+
+async function loadTimerCategories() {
+    const categories = await getTimerCategories();
+
     const select = document.getElementById('timer-category-select');
     select.innerHTML = '<option value="">種類を選択</option>'; 
+
     categories.forEach(category => {
         const option = document.createElement('option');
-        option.value = category;
-        option.textContent = category;
+        option.value = category.name;
+        option.textContent = category.name;
         select.appendChild(option);
     });
+
     const categoryList = document.getElementById('timer-category-list');
     categoryList.innerHTML = '';
+
+    if (!auth.currentUser) {
+        categoryList.innerHTML = '<li>Googleログインするとクラウド上の計測種類を表示できます。</li>';
+        return;
+    }
+
+    if (categories.length === 0) {
+        categoryList.innerHTML = '<li>登録済みの計測種類はありません。</li>';
+        return;
+    }
+
     categories.forEach(category => {
         const li = document.createElement('li');
         li.className = 'list-item';
         li.style.borderLeft = '6px solid var(--time-color)';
         li.innerHTML = `
             <div class="item-details">
-                <strong>${category}</strong>
+                <strong>${category.name}</strong>
             </div>
-            <button class="delete-btn" onclick="deleteTimerCategory('${category}')">削除</button>
+            <button class="delete-btn" onclick="deleteTimerCategory('${category.id}')">削除</button>
         `;
         categoryList.appendChild(li);
     });
 }
 
-function deleteTimerCategory(categoryName) {
-    if (!confirm(`種類「${categoryName}」を削除しますか？\n（この種類に紐づく計測記録はそのまま残ります）`)) { return; }
-    let categories = getTimerCategories();
-    categories = categories.filter(c => c !== categoryName);
-    saveTimerCategories(categories);
-    loadTimerCategories(); 
+async function deleteTimerCategory(categoryId) {
+    if (!auth.currentUser) {
+        alert("ログインしてください。");
+        return;
+    }
+
+    if (!confirm("この計測種類を削除しますか？\n（この種類に紐づく計測記録はそのまま残ります）")) {
+        return;
+    }
+
+    await deleteDoc(doc(db, "users", auth.currentUser.uid, "timerCategories", categoryId));
+    await loadTimerCategories(); 
 }
 
 function startTimer() { 
@@ -626,6 +677,7 @@ onAuthStateChanged(auth, async (user) => {
   
       await loadAndDisplayTasks();
       await loadAndDisplaySchedules();
+      await loadTimerCategories();
 
     } else {
       userInfo.textContent = "";
@@ -634,5 +686,6 @@ onAuthStateChanged(auth, async (user) => {
   
       await loadAndDisplayTasks();
       await loadAndDisplaySchedules();
+      await loadTimerCategories();
     }
   });

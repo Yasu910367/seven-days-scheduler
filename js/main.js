@@ -1,5 +1,10 @@
 // ==================== インポート ====================
-import './firebase.js';
+import {
+    auth,
+    provider,
+    signInWithPopup,
+    signOut
+  } from './firebase.js';
 import { formatDate, getWeekStart, formatTime } from './utils.js';
 import { applyDailyTheme } from './theme.js';
 
@@ -467,3 +472,34 @@ window.deleteTimerCategory = deleteTimerCategory;
 window.startTimer = startTimer;
 window.stopTimer = stopTimer;
 window.deleteSingleTimerRecord = deleteSingleTimerRecord;
+
+const loginBtn = document.getElementById("login-btn");
+const logoutBtn = document.getElementById("logout-btn");
+const userInfo = document.getElementById("user-info");
+
+if (loginBtn) {
+  loginBtn.addEventListener("click", async () => {
+    try {
+      const result = await signInWithPopup(auth, provider);
+
+      userInfo.textContent =
+        `ログイン中: ${result.user.displayName}`;
+
+      loginBtn.style.display = "none";
+      logoutBtn.style.display = "inline-block";
+
+    } catch (error) {
+      console.error(error);
+    }
+  });
+}
+
+if (logoutBtn) {
+  logoutBtn.addEventListener("click", async () => {
+    await signOut(auth);
+
+    userInfo.textContent = "";
+    loginBtn.style.display = "inline-block";
+    logoutBtn.style.display = "none";
+  });
+}

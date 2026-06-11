@@ -1,6 +1,13 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
 import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-analytics.js";
 
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut
+} from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
+
 const firebaseConfig = {
   apiKey: "AIzaSyAeeHp2OneKVpE08Inx2Fjq-M_P-8r63WU",
   authDomain: "seven-days-scheduler.firebaseapp.com",
@@ -14,6 +21,15 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const analytics = getAnalytics(app);
 
+const auth = getAuth(app);
+const provider = new GoogleAuthProvider();
+
 console.log("Firebase connected!");
 
-export { app };
+export {
+  app,
+  auth,
+  provider,
+  signInWithPopup,
+  signOut
+};

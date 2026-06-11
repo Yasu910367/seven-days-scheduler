@@ -67,32 +67,62 @@ function openTab(tabId) {
     }
 }
 
-// ==================== スケジュール管理 ====================
-function saveSchedules(schedules) { localStorage.setItem(SCHEDULE_KEY, JSON.stringify(schedules)); }
-function getSchedules() { return localStorage.getItem(SCHEDULE_KEY) ? JSON.parse(localStorage.getItem(SCHEDULE_KEY)) : []; }
+// ==================== スケジュール管理（Firestore対応） ====================
+async function getSchedules() {
+    if (!auth.currentUser) {
+        return [];
+    }
 
-function addSchedule() { 
+    const schedulesRef = collection(db, "users", auth.currentUser.uid, "schedules");
+    const q = query(schedulesRef, orderBy("date", "asc"));
+    const snapshot = await getDocs(q);
+
+    return snapshot.docs.map(docSnap => ({
+        id: docSnap.id,
+        ...docSnap.data()
+    }));
+}
+
+async function addSchedule() { 
+    if (!auth.currentUser) {
+        alert("予定を保存するにはGoogleログインしてください。");
+        return;
+    }
+
     const date = document.getElementById('schedule-date').value;
     const time = document.getElementById('schedule-time').value;
     const event = document.getElementById('schedule-event').value.trim();
-    if (!date || !event) { alert('日付と予定内容は必須です。'); return; }
-    const schedules = getSchedules();
-    schedules.push({ id: Date.now(), date: date, time: time, event: event });
-    saveSchedules(schedules);
+
+    if (!date || !event) {
+        alert('日付と予定内容は必須です。');
+        return;
+    }
+
+    await addDoc(collection(db, "users", auth.currentUser.uid, "schedules"), {
+        date,
+        time,
+        event,
+        createdAt: Date.now()
+    });
+
     document.getElementById('schedule-time').value = '';
     document.getElementById('schedule-event').value = '';
-    loadAndDisplaySchedules(); 
+
+    await loadAndDisplaySchedules(); 
 }
 
-function deleteSchedule(id) { 
-    let schedules = getSchedules();
-    schedules = schedules.filter(s => s.id !== id);
-    saveSchedules(schedules);
-    loadAndDisplaySchedules();
+async function deleteSchedule(id) { 
+    if (!auth.currentUser) {
+        alert("ログインしてください。");
+        return;
+    }
+
+    await deleteDoc(doc(db, "users", auth.currentUser.uid, "schedules", id));
+    await loadAndDisplaySchedules();
 }
 
-function getSortedSchedules() {
-    const schedules = getSchedules();
+async function getSortedSchedules() {
+    const schedules = await getSchedules();
     return schedules.sort((a, b) => {
         const dateTimeA = `${a.date} ${a.time || '23:59'}`;
         const dateTimeB = `${b.date} ${b.time || '23:59'}`;
@@ -100,18 +130,22 @@ function getSortedSchedules() {
     });
 }
 
-function loadAndDisplaySchedules() { 
-    const sortedSchedules = getSortedSchedules();
+async function loadAndDisplaySchedules() { 
+    const sortedSchedules = await getSortedSchedules();
     const allScheduleList = document.getElementById('all-schedule-list');
     allScheduleList.innerHTML = '';
-    if (sortedSchedules.length === 0) {
+
+    if (!auth.currentUser) {
+        allScheduleList.innerHTML = '<li>Googleログインするとクラウド上の予定を表示できます。</li>';
+    } else if (sortedSchedules.length === 0) {
         allScheduleList.innerHTML = '<li>登録済みの予定はありません。</li>';
     } else {
         sortedSchedules.forEach(schedule => {
             allScheduleList.appendChild(createScheduleListItem(schedule));
         });
     }
-    renderCalendarView(currentView, displayDate); 
+
+    await renderCalendarView(currentView, displayDate); 
 }
 
 function createScheduleListItem(schedule) {
@@ -122,13 +156,14 @@ function createScheduleListItem(schedule) {
         <div class="item-details">
             <strong>${schedule.date}</strong>${timeDisplay}: ${schedule.event}
         </div>
-        <button class="delete-btn" onclick="deleteSchedule(${schedule.id})">完了</button>
+        <button class="delete-btn" onclick="deleteSchedule('${schedule.id}')">完了</button>
     `;
     return li;
 }
 
 function changeView(view) {
     currentView = view;
+
     document.querySelectorAll('.view-controls button').forEach(btn => {
         if (btn.id.includes(view)) {
             btn.classList.add('active');
@@ -136,31 +171,50 @@ function changeView(view) {
             btn.classList.remove('active');
         }
     });
-    document.querySelectorAll('#calendar-container > div').forEach(container => { container.style.display = 'none'; });
+
+    document.querySelectorAll('#calendar-container > div').forEach(container => {
+        container.style.display = 'none';
+    });
+
     document.getElementById(`${view}-view`).style.display = 'block';
     renderCalendarView(currentView, displayDate);
 }
 
-function navigateToToday() { displayDate = new Date(); renderCalendarView(currentView, displayDate); }
-
-function navigateCalendar(step) {
-    if (currentView === 'month') { displayDate.setMonth(displayDate.getMonth() + step); } 
-    else if (currentView === 'week') { displayDate.setDate(displayDate.getDate() + (step * 7)); } 
-    else if (currentView === 'day') { displayDate.setDate(displayDate.getDate() + step); }
+function navigateToToday() {
+    displayDate = new Date();
     renderCalendarView(currentView, displayDate);
 }
 
-function renderCalendarView(view, date) {
-    const schedules = getSchedules();
+function navigateCalendar(step) {
+    if (currentView === 'month') {
+        displayDate.setMonth(displayDate.getMonth() + step);
+    } else if (currentView === 'week') {
+        displayDate.setDate(displayDate.getDate() + (step * 7));
+    } else if (currentView === 'day') {
+        displayDate.setDate(displayDate.getDate() + step);
+    }
+
+    renderCalendarView(currentView, displayDate);
+}
+
+async function renderCalendarView(view, date) {
+    const schedules = await getSchedules();
+
     const schedulesByDate = schedules.reduce((acc, sched) => {
         acc[sched.date] = acc[sched.date] || [];
         acc[sched.date].push(sched);
         return acc;
     }, {});
-    if (view === 'month') { renderMonthView(date, schedulesByDate); } 
-    else if (view === 'week') { renderWeekView(date, schedulesByDate); } 
-    else if (view === 'day') { renderDayView(date, schedulesByDate); }
+
+    if (view === 'month') {
+        renderMonthView(date, schedulesByDate);
+    } else if (view === 'week') {
+        renderWeekView(date, schedulesByDate);
+    } else if (view === 'day') {
+        renderDayView(date, schedulesByDate);
+    }
 }
+
 
 function renderMonthView(date, schedulesByDate) {
     const container = document.getElementById('month-view');
@@ -571,11 +625,14 @@ onAuthStateChanged(auth, async (user) => {
       logoutBtn.style.display = "inline-block";
   
       await loadAndDisplayTasks();
+      await loadAndDisplaySchedules();
+
     } else {
       userInfo.textContent = "";
       loginBtn.style.display = "inline-block";
       logoutBtn.style.display = "none";
   
       await loadAndDisplayTasks();
+      await loadAndDisplaySchedules();
     }
   });

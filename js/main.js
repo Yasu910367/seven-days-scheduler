@@ -4,7 +4,8 @@ import {
     provider,
     db,
     signInWithPopup,
-    signOut
+    signOut,
+    onAuthStateChanged
 } from './firebase.js';
 
 import {
@@ -66,32 +67,62 @@ function openTab(tabId) {
     }
 }
 
-// ==================== スケジュール管理 ====================
-function saveSchedules(schedules) { localStorage.setItem(SCHEDULE_KEY, JSON.stringify(schedules)); }
-function getSchedules() { return localStorage.getItem(SCHEDULE_KEY) ? JSON.parse(localStorage.getItem(SCHEDULE_KEY)) : []; }
+// ==================== スケジュール管理（Firestore対応） ====================
+async function getSchedules() {
+    if (!auth.currentUser) {
+        return [];
+    }
 
-function addSchedule() { 
+    const schedulesRef = collection(db, "users", auth.currentUser.uid, "schedules");
+    const q = query(schedulesRef, orderBy("date", "asc"));
+    const snapshot = await getDocs(q);
+
+    return snapshot.docs.map(docSnap => ({
+        id: docSnap.id,
+        ...docSnap.data()
+    }));
+}
+
+async function addSchedule() { 
+    if (!auth.currentUser) {
+        alert("予定を保存するにはGoogleログインしてください。");
+        return;
+    }
+
     const date = document.getElementById('schedule-date').value;
     const time = document.getElementById('schedule-time').value;
     const event = document.getElementById('schedule-event').value.trim();
-    if (!date || !event) { alert('日付と予定内容は必須です。'); return; }
-    const schedules = getSchedules();
-    schedules.push({ id: Date.now(), date: date, time: time, event: event });
-    saveSchedules(schedules);
+
+    if (!date || !event) {
+        alert('日付と予定内容は必須です。');
+        return;
+    }
+
+    await addDoc(collection(db, "users", auth.currentUser.uid, "schedules"), {
+        date,
+        time,
+        event,
+        createdAt: Date.now()
+    });
+
     document.getElementById('schedule-time').value = '';
     document.getElementById('schedule-event').value = '';
-    loadAndDisplaySchedules(); 
+
+    await loadAndDisplaySchedules(); 
 }
 
-function deleteSchedule(id) { 
-    let schedules = getSchedules();
-    schedules = schedules.filter(s => s.id !== id);
-    saveSchedules(schedules);
-    loadAndDisplaySchedules();
+async function deleteSchedule(id) { 
+    if (!auth.currentUser) {
+        alert("ログインしてください。");
+        return;
+    }
+
+    await deleteDoc(doc(db, "users", auth.currentUser.uid, "schedules", id));
+    await loadAndDisplaySchedules();
 }
 
-function getSortedSchedules() {
-    const schedules = getSchedules();
+async function getSortedSchedules() {
+    const schedules = await getSchedules();
     return schedules.sort((a, b) => {
         const dateTimeA = `${a.date} ${a.time || '23:59'}`;
         const dateTimeB = `${b.date} ${b.time || '23:59'}`;
@@ -99,18 +130,22 @@ function getSortedSchedules() {
     });
 }
 
-function loadAndDisplaySchedules() { 
-    const sortedSchedules = getSortedSchedules();
+async function loadAndDisplaySchedules() { 
+    const sortedSchedules = await getSortedSchedules();
     const allScheduleList = document.getElementById('all-schedule-list');
     allScheduleList.innerHTML = '';
-    if (sortedSchedules.length === 0) {
+
+    if (!auth.currentUser) {
+        allScheduleList.innerHTML = '<li>Googleログインするとクラウド上の予定を表示できます。</li>';
+    } else if (sortedSchedules.length === 0) {
         allScheduleList.innerHTML = '<li>登録済みの予定はありません。</li>';
     } else {
         sortedSchedules.forEach(schedule => {
             allScheduleList.appendChild(createScheduleListItem(schedule));
         });
     }
-    renderCalendarView(currentView, displayDate); 
+
+    await renderCalendarView(currentView, displayDate); 
 }
 
 function createScheduleListItem(schedule) {
@@ -121,13 +156,14 @@ function createScheduleListItem(schedule) {
         <div class="item-details">
             <strong>${schedule.date}</strong>${timeDisplay}: ${schedule.event}
         </div>
-        <button class="delete-btn" onclick="deleteSchedule(${schedule.id})">完了</button>
+        <button class="delete-btn" onclick="deleteSchedule('${schedule.id}')">完了</button>
     `;
     return li;
 }
 
 function changeView(view) {
     currentView = view;
+
     document.querySelectorAll('.view-controls button').forEach(btn => {
         if (btn.id.includes(view)) {
             btn.classList.add('active');
@@ -135,31 +171,50 @@ function changeView(view) {
             btn.classList.remove('active');
         }
     });
-    document.querySelectorAll('#calendar-container > div').forEach(container => { container.style.display = 'none'; });
+
+    document.querySelectorAll('#calendar-container > div').forEach(container => {
+        container.style.display = 'none';
+    });
+
     document.getElementById(`${view}-view`).style.display = 'block';
     renderCalendarView(currentView, displayDate);
 }
 
-function navigateToToday() { displayDate = new Date(); renderCalendarView(currentView, displayDate); }
-
-function navigateCalendar(step) {
-    if (currentView === 'month') { displayDate.setMonth(displayDate.getMonth() + step); } 
-    else if (currentView === 'week') { displayDate.setDate(displayDate.getDate() + (step * 7)); } 
-    else if (currentView === 'day') { displayDate.setDate(displayDate.getDate() + step); }
+function navigateToToday() {
+    displayDate = new Date();
     renderCalendarView(currentView, displayDate);
 }
 
-function renderCalendarView(view, date) {
-    const schedules = getSchedules();
+function navigateCalendar(step) {
+    if (currentView === 'month') {
+        displayDate.setMonth(displayDate.getMonth() + step);
+    } else if (currentView === 'week') {
+        displayDate.setDate(displayDate.getDate() + (step * 7));
+    } else if (currentView === 'day') {
+        displayDate.setDate(displayDate.getDate() + step);
+    }
+
+    renderCalendarView(currentView, displayDate);
+}
+
+async function renderCalendarView(view, date) {
+    const schedules = await getSchedules();
+
     const schedulesByDate = schedules.reduce((acc, sched) => {
         acc[sched.date] = acc[sched.date] || [];
         acc[sched.date].push(sched);
         return acc;
     }, {});
-    if (view === 'month') { renderMonthView(date, schedulesByDate); } 
-    else if (view === 'week') { renderWeekView(date, schedulesByDate); } 
-    else if (view === 'day') { renderDayView(date, schedulesByDate); }
+
+    if (view === 'month') {
+        renderMonthView(date, schedulesByDate);
+    } else if (view === 'week') {
+        renderWeekView(date, schedulesByDate);
+    } else if (view === 'day') {
+        renderDayView(date, schedulesByDate);
+    }
 }
+
 
 function renderMonthView(date, schedulesByDate) {
     const container = document.getElementById('month-view');
@@ -363,57 +418,121 @@ async function loadAndDisplayTasks() {
     });
 }
 // ==================== 時間管理 ====================
-function getTimerRecords() { return localStorage.getItem(TIMER_RECORDS_KEY) ? JSON.parse(localStorage.getItem(TIMER_RECORDS_KEY)) : []; }
-function saveTimerRecords(records) { localStorage.setItem(TIMER_RECORDS_KEY, JSON.stringify(records)); }
-function getTimerCategories() { return localStorage.getItem(TIMER_CATEGORIES_KEY) ? JSON.parse(localStorage.getItem(TIMER_CATEGORIES_KEY)) : ['自習', '講義復習', '課題']; }
-function saveTimerCategories(categories) { localStorage.setItem(TIMER_CATEGORIES_KEY, JSON.stringify(categories)); }
-
-function addTimerCategory() { 
-    const newCategory = document.getElementById('timer-category-input').value.trim();
-    if (!newCategory) { alert('種類を入力してください。'); return; }
-    let categories = getTimerCategories();
-    if (!categories.includes(newCategory)) {
-        categories.push(newCategory);
-        saveTimerCategories(categories);
-        loadTimerCategories(); 
-        document.getElementById('timer-category-input').value = '';
-    } else {
-        alert('その種類はすでに登録されています。');
+async function getTimerRecords() {
+    if (!auth.currentUser) {
+        return [];
     }
+
+    const recordsRef = collection(db, "users", auth.currentUser.uid, "timerRecords");
+    const q = query(recordsRef, orderBy("createdAt", "desc"));
+    const snapshot = await getDocs(q);
+
+    return snapshot.docs.map(docSnap => ({
+        id: docSnap.id,
+        ...docSnap.data()
+    }));
 }
 
-function loadTimerCategories() {
-    const categories = getTimerCategories();
+async function getTimerCategories() {
+    if (!auth.currentUser) {
+        return [];
+    }
+
+    const categoriesRef = collection(db, "users", auth.currentUser.uid, "timerCategories");
+    const q = query(categoriesRef, orderBy("name", "asc"));
+    const snapshot = await getDocs(q);
+
+    return snapshot.docs.map(docSnap => ({
+        id: docSnap.id,
+        ...docSnap.data()
+    }));
+}
+
+async function addTimerCategory() {
+    console.log("addTimerCategory start");
+    console.log(auth.currentUser);
+
+    if (!auth.currentUser) {
+        alert("計測種類を保存するにはGoogleログインしてください。");
+        return;
+    }
+
+    const newCategory = document.getElementById('timer-category-input').value.trim();
+
+    if (!newCategory) {
+        alert('種類を入力してください。');
+        return;
+    }
+
+    const categories = await getTimerCategories();
+
+    if (categories.some(category => category.name === newCategory)) {
+        alert('その種類はすでに登録されています。');
+        return;
+    }
+
+    await addDoc(collection(db, "users", auth.currentUser.uid, "timerCategories"), {
+        name: newCategory,
+        createdAt: Date.now()
+    });
+
+    document.getElementById('timer-category-input').value = '';
+
+    await loadTimerCategories(); 
+}
+
+async function loadTimerCategories() {
+    const categories = await getTimerCategories();
+
     const select = document.getElementById('timer-category-select');
     select.innerHTML = '<option value="">種類を選択</option>'; 
+
     categories.forEach(category => {
         const option = document.createElement('option');
-        option.value = category;
-        option.textContent = category;
+        option.value = category.name;
+        option.textContent = category.name;
         select.appendChild(option);
     });
+
     const categoryList = document.getElementById('timer-category-list');
     categoryList.innerHTML = '';
+
+    if (!auth.currentUser) {
+        categoryList.innerHTML = '<li>Googleログインするとクラウド上の計測種類を表示できます。</li>';
+        return;
+    }
+
+    if (categories.length === 0) {
+        categoryList.innerHTML = '<li>登録済みの計測種類はありません。</li>';
+        return;
+    }
+
     categories.forEach(category => {
         const li = document.createElement('li');
         li.className = 'list-item';
         li.style.borderLeft = '6px solid var(--time-color)';
         li.innerHTML = `
             <div class="item-details">
-                <strong>${category}</strong>
+                <strong>${category.name}</strong>
             </div>
-            <button class="delete-btn" onclick="deleteTimerCategory('${category}')">削除</button>
+            <button class="delete-btn" onclick="deleteTimerCategory('${category.id}')">削除</button>
         `;
         categoryList.appendChild(li);
     });
 }
 
-function deleteTimerCategory(categoryName) {
-    if (!confirm(`種類「${categoryName}」を削除しますか？\n（この種類に紐づく計測記録はそのまま残ります）`)) { return; }
-    let categories = getTimerCategories();
-    categories = categories.filter(c => c !== categoryName);
-    saveTimerCategories(categories);
-    loadTimerCategories(); 
+async function deleteTimerCategory(categoryId) {
+    if (!auth.currentUser) {
+        alert("ログインしてください。");
+        return;
+    }
+
+    if (!confirm("この計測種類を削除しますか？\n（この種類に紐づく計測記録はそのまま残ります）")) {
+        return;
+    }
+
+    await deleteDoc(doc(db, "users", auth.currentUser.uid, "timerCategories", categoryId));
+    await loadTimerCategories(); 
 }
 
 function startTimer() { 
@@ -433,28 +552,35 @@ function updateTimerDisplay() {
     document.getElementById('timer-display').textContent = formatTime(elapsedTime);
 }
 
-function stopTimer() { 
+async function stopTimer() { 
     if (!running) return;
+
     clearInterval(timerInterval);
     running = false;
+
     const elapsedTimeSeconds = Math.floor((Date.now() - startTime) / 1000);
     const category = document.getElementById('timer-category-select').value;
+
     if (elapsedTimeSeconds > 0) {
-        const newRecord = { id: Date.now(), date: formatDate(new Date()), category: category, durationSeconds: elapsedTimeSeconds };
-        let records = getTimerRecords();
-        records.push(newRecord);
-        saveTimerRecords(records);
+        await addDoc(collection(db, "users", auth.currentUser.uid, "timerRecords"), {
+            date: formatDate(new Date()),
+            category,
+            durationSeconds: elapsedTimeSeconds,
+            createdAt: Date.now()
+        });
     }
+
     document.getElementById('timer-display').textContent = '00:00:00';
     document.getElementById('timer-start-btn').disabled = false;
     document.getElementById('timer-stop-btn').disabled = true;
     document.getElementById('timer-category-select').disabled = false;
     document.getElementById('timer-category-select').value = ''; 
-    loadAndDisplayTimerRecords();
+
+    await loadAndDisplayTimerRecords();
 }
 
-function loadAndDisplayTimerRecords() {
-    const records = getTimerRecords();
+async function loadAndDisplayTimerRecords() {
+    const records = await getTimerRecords();
     const recordList = document.getElementById('timer-record-list');
     recordList.innerHTML = '';
     if (records.length === 0) { recordList.innerHTML = '<li>計測記録はありません。</li>'; return; }
@@ -501,12 +627,16 @@ function createTimerRecordListItem(record) {
     return li;
 }
 
-function deleteSingleTimerRecord(id) {
+async function deleteSingleTimerRecord(id) {
+    if (!auth.currentUser) {
+        alert("ログインしてください。");
+        return;
+    }
+
     if (!confirm("この計測記録を削除しますか？")) return;
-    let records = getTimerRecords();
-    records = records.filter(r => r.id !== id);
-    saveTimerRecords(records);
-    loadAndDisplayTimerRecords();
+
+    await deleteDoc(doc(db, "users", auth.currentUser.uid, "timerRecords", id));
+    await loadAndDisplayTimerRecords();
 }
 
 // ==================== 🛠️ HTMLとの架け橋（超重要） ====================
@@ -562,3 +692,24 @@ if (logoutBtn) {
     await loadAndDisplayTasks();
   });
 }
+
+onAuthStateChanged(auth, async (user) => {
+    if (user) {
+      userInfo.textContent = `ログイン中: ${user.displayName}`;
+      loginBtn.style.display = "none";
+      logoutBtn.style.display = "inline-block";
+  
+      await loadAndDisplayTasks();
+      await loadAndDisplaySchedules();
+      await loadTimerCategories();
+
+    } else {
+      userInfo.textContent = "";
+      loginBtn.style.display = "inline-block";
+      logoutBtn.style.display = "none";
+  
+      await loadAndDisplayTasks();
+      await loadAndDisplaySchedules();
+      await loadTimerCategories();
+    }
+  });

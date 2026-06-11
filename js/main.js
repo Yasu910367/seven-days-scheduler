@@ -4,7 +4,8 @@ import {
     provider,
     db,
     signInWithPopup,
-    signOut
+    signOut,
+    onAuthStateChanged
 } from './firebase.js';
 
 import {
@@ -562,3 +563,19 @@ if (logoutBtn) {
     await loadAndDisplayTasks();
   });
 }
+
+onAuthStateChanged(auth, async (user) => {
+    if (user) {
+      userInfo.textContent = `ログイン中: ${user.displayName}`;
+      loginBtn.style.display = "none";
+      logoutBtn.style.display = "inline-block";
+  
+      await loadAndDisplayTasks();
+    } else {
+      userInfo.textContent = "";
+      loginBtn.style.display = "inline-block";
+      logoutBtn.style.display = "none";
+  
+      await loadAndDisplayTasks();
+    }
+  });

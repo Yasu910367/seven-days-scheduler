@@ -2,9 +2,22 @@
 import {
     auth,
     provider,
+    db,
     signInWithPopup,
     signOut
-  } from './firebase.js';
+} from './firebase.js';
+
+import {
+    collection,
+    addDoc,
+    getDocs,
+    deleteDoc,
+    doc,
+    updateDoc,
+    query,
+    orderBy
+} from "https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js";
+
 import { formatDate, getWeekStart, formatTime } from './utils.js';
 import { applyDailyTheme } from './theme.js';
 
@@ -238,55 +251,98 @@ function renderDayView(date, schedulesByDate) {
     container.innerHTML = html;
 }
 
-// ==================== タスク管理 ====================
-function saveTasks(tasks) { localStorage.setItem(TASK_KEY, JSON.stringify(tasks)); }
-function getTasks() { return localStorage.getItem(TASK_KEY) ? JSON.parse(localStorage.getItem(TASK_KEY)) : []; }
+// ==================== タスク管理（Firestore対応） ====================
+async function getTasks() {
+    if (!auth.currentUser) {
+        return [];
+    }
 
-function addTask() { 
+    const tasksRef = collection(db, "users", auth.currentUser.uid, "tasks");
+    const q = query(tasksRef, orderBy("priority", "asc"));
+    const snapshot = await getDocs(q);
+
+    return snapshot.docs.map(docSnap => ({
+        id: docSnap.id,
+        ...docSnap.data()
+    }));
+}
+
+async function addTask() { 
+    if (!auth.currentUser) {
+        alert("タスクを保存するにはGoogleログインしてください。");
+        return;
+    }
+
     const description = document.getElementById('task-description').value.trim();
     let priority = parseInt(document.getElementById('task-priority').value);
-    if (!description) { alert('タスク内容は必須です。'); return; }
-    let tasks = getTasks();
+
+    if (!description) {
+        alert('タスク内容は必須です。');
+        return;
+    }
+
     if (isNaN(priority) || priority < 1) {
+        const tasks = await getTasks();
         const maxPriority = tasks.length > 0 ? Math.max(...tasks.map(t => t.priority)) : 0;
         priority = maxPriority + 1;
     }
-    tasks.push({ id: Date.now(), description: description, priority: priority });
-    saveTasks(tasks);
+
+    await addDoc(collection(db, "users", auth.currentUser.uid, "tasks"), {
+        description,
+        priority,
+        createdAt: Date.now()
+    });
+
     document.getElementById('task-description').value = '';
     document.getElementById('task-priority').value = '';
-    loadAndDisplayTasks();
+
+    await loadAndDisplayTasks();
 }
 
-function deleteTask(id) { 
-    let tasks = getTasks();
-    tasks = tasks.filter(t => t.id !== id);
-    saveTasks(tasks);
-    loadAndDisplayTasks();
-}
-
-function updateTaskPriority(id, newPriority) { 
-    let tasks = getTasks();
-    const task = tasks.find(t => t.id === id);
-    if (task && newPriority >= 1) {
-        task.priority = newPriority;
-        saveTasks(tasks);
-        loadAndDisplayTasks();
-    } else {
-        alert('有効な優先度（1以上の数値）を入力してください。');
+async function deleteTask(id) { 
+    if (!auth.currentUser) {
+        alert("ログインしてください。");
+        return;
     }
+
+    await deleteDoc(doc(db, "users", auth.currentUser.uid, "tasks", id));
+    await loadAndDisplayTasks();
 }
 
-function loadAndDisplayTasks() { 
-    const tasks = getTasks();
+async function updateTaskPriority(id, newPriority) { 
+    if (!auth.currentUser) {
+        alert("ログインしてください。");
+        return;
+    }
+
+    if (!newPriority || newPriority < 1) {
+        alert('有効な優先度（1以上の数値）を入力してください。');
+        return;
+    }
+
+    await updateDoc(doc(db, "users", auth.currentUser.uid, "tasks", id), {
+        priority: newPriority
+    });
+
+    await loadAndDisplayTasks();
+}
+
+async function loadAndDisplayTasks() { 
+    const tasks = await getTasks();
     const taskList = document.getElementById('task-list');
     taskList.innerHTML = '';
-    const sortedTasks = tasks.sort((a, b) => a.priority - b.priority);
-    if (sortedTasks.length === 0) {
+
+    if (!auth.currentUser) {
+        taskList.innerHTML = '<li>Googleログインするとクラウド上のタスクを表示できます。</li>';
+        return;
+    }
+
+    if (tasks.length === 0) {
         taskList.innerHTML = '<li>タスクは登録されていません。</li>';
         return;
     }
-    sortedTasks.forEach(task => {
+
+    tasks.forEach(task => {
         const li = document.createElement('li');
         li.className = 'list-item task-list'; 
         li.innerHTML = `
@@ -297,16 +353,15 @@ function loadAndDisplayTasks() {
             
             <div>
                 <input type="number" id="priority-input-${task.id}" value="${task.priority}" min="1" style="width: 80px;">
-                <button onclick="updateTaskPriority(${task.id}, parseInt(document.getElementById('priority-input-${task.id}').value))" 
+                <button onclick="updateTaskPriority('${task.id}', parseInt(document.getElementById('priority-input-${task.id}').value))" 
                         style="background-color: var(--task-color);">変更</button>
                 
-                <button class="delete-btn" onclick="deleteTask(${task.id})">削除</button>
+                <button class="delete-btn" onclick="deleteTask('${task.id}')">削除</button>
             </div>
         `;
         taskList.appendChild(li);
     });
 }
-
 // ==================== 時間管理 ====================
 function getTimerRecords() { return localStorage.getItem(TIMER_RECORDS_KEY) ? JSON.parse(localStorage.getItem(TIMER_RECORDS_KEY)) : []; }
 function saveTimerRecords(records) { localStorage.setItem(TIMER_RECORDS_KEY, JSON.stringify(records)); }
@@ -488,6 +543,8 @@ if (loginBtn) {
       loginBtn.style.display = "none";
       logoutBtn.style.display = "inline-block";
 
+      await loadAndDisplayTasks();
+
     } catch (error) {
       console.error(error);
     }
@@ -501,5 +558,7 @@ if (logoutBtn) {
     userInfo.textContent = "";
     loginBtn.style.display = "inline-block";
     logoutBtn.style.display = "none";
+
+    await loadAndDisplayTasks();
   });
 }

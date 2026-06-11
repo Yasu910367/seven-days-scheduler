@@ -418,8 +418,21 @@ async function loadAndDisplayTasks() {
     });
 }
 // ==================== 時間管理 ====================
-function getTimerRecords() { return localStorage.getItem(TIMER_RECORDS_KEY) ? JSON.parse(localStorage.getItem(TIMER_RECORDS_KEY)) : []; }
-function saveTimerRecords(records) { localStorage.setItem(TIMER_RECORDS_KEY, JSON.stringify(records)); }
+async function getTimerRecords() {
+    if (!auth.currentUser) {
+        return [];
+    }
+
+    const recordsRef = collection(db, "users", auth.currentUser.uid, "timerRecords");
+    const q = query(recordsRef, orderBy("createdAt", "desc"));
+    const snapshot = await getDocs(q);
+
+    return snapshot.docs.map(docSnap => ({
+        id: docSnap.id,
+        ...docSnap.data()
+    }));
+}
+
 async function getTimerCategories() {
     if (!auth.currentUser) {
         return [];
@@ -539,28 +552,35 @@ function updateTimerDisplay() {
     document.getElementById('timer-display').textContent = formatTime(elapsedTime);
 }
 
-function stopTimer() { 
+async function stopTimer() { 
     if (!running) return;
+
     clearInterval(timerInterval);
     running = false;
+
     const elapsedTimeSeconds = Math.floor((Date.now() - startTime) / 1000);
     const category = document.getElementById('timer-category-select').value;
+
     if (elapsedTimeSeconds > 0) {
-        const newRecord = { id: Date.now(), date: formatDate(new Date()), category: category, durationSeconds: elapsedTimeSeconds };
-        let records = getTimerRecords();
-        records.push(newRecord);
-        saveTimerRecords(records);
+        await addDoc(collection(db, "users", auth.currentUser.uid, "timerRecords"), {
+            date: formatDate(new Date()),
+            category,
+            durationSeconds: elapsedTimeSeconds,
+            createdAt: Date.now()
+        });
     }
+
     document.getElementById('timer-display').textContent = '00:00:00';
     document.getElementById('timer-start-btn').disabled = false;
     document.getElementById('timer-stop-btn').disabled = true;
     document.getElementById('timer-category-select').disabled = false;
     document.getElementById('timer-category-select').value = ''; 
-    loadAndDisplayTimerRecords();
+
+    await loadAndDisplayTimerRecords();
 }
 
-function loadAndDisplayTimerRecords() {
-    const records = getTimerRecords();
+async function loadAndDisplayTimerRecords() {
+    const records = await getTimerRecords();
     const recordList = document.getElementById('timer-record-list');
     recordList.innerHTML = '';
     if (records.length === 0) { recordList.innerHTML = '<li>計測記録はありません。</li>'; return; }
@@ -607,12 +627,16 @@ function createTimerRecordListItem(record) {
     return li;
 }
 
-function deleteSingleTimerRecord(id) {
+async function deleteSingleTimerRecord(id) {
+    if (!auth.currentUser) {
+        alert("ログインしてください。");
+        return;
+    }
+
     if (!confirm("この計測記録を削除しますか？")) return;
-    let records = getTimerRecords();
-    records = records.filter(r => r.id !== id);
-    saveTimerRecords(records);
-    loadAndDisplayTimerRecords();
+
+    await deleteDoc(doc(db, "users", auth.currentUser.uid, "timerRecords", id));
+    await loadAndDisplayTimerRecords();
 }
 
 // ==================== 🛠️ HTMLとの架け橋（超重要） ====================

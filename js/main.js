@@ -1,4 +1,5 @@
 // ==================== インポート ====================
+import './firebase.js';
 import { formatDate, getWeekStart, formatTime } from './utils.js';
 import { applyDailyTheme } from './theme.js';
 

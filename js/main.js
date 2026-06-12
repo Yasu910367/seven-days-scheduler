@@ -605,7 +605,7 @@ async function loadAndDisplayTimerRecords() {
             <span>合計: ${categoryTotalTimeDisplay}</span>
         `;
         recordList.appendChild(categoryHeader);
-        categoryRecords.sort((a, b) => b.id - a.id).forEach(record => {
+        categoryRecords.sort((a, b) => b.createdAt - a.createdAt).forEach(record => {
             const li = createTimerRecordListItem(record);
             li.classList.add('nested'); 
             recordList.appendChild(li);
@@ -622,7 +622,7 @@ function createTimerRecordListItem(record) {
             <span style="font-size: 0.9em; color: #666;">${record.date}</span>: 
             <strong>${timeDisplay}</strong>
         </div>
-        <button class="delete-btn" onclick="deleteSingleTimerRecord(${record.id})" style="padding: 5px 10px;">記録削除</button>
+        <button class="delete-btn" onclick="deleteSingleTimerRecord('${record.id}')" style="padding: 5px 10px;">記録削除</button>
     `;
     return li;
 }
